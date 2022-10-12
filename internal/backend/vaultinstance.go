@@ -24,10 +24,8 @@ func ConnectVaultInstance(vconfig *config.VaultConfig) (VaultInstance, error) {
 	config := vault.DefaultConfig()
 	config.Address = vconfig.Address
 	client, err := vault.NewClient(config)
-	//ns := client.Namespace()
 	if len(vconfig.Namespace) > 0 {
 		client.SetNamespace(vconfig.Namespace)
-		//ns = vconfig.Namespace
 	}
 	vi := VaultInstance{}
 
@@ -36,15 +34,6 @@ func ConnectVaultInstance(vconfig *config.VaultConfig) (VaultInstance, error) {
 	} else {
 		vi.DisplayName = vconfig.Name
 	}
-	//vi.Address = Address
-	//vi.Auth = auth
-	/*
-		if ns == "" {
-			vi.Namespace = "Default"
-		} else {
-			vi.Namespace = ns
-		}
-	*/
 
 	if err != nil {
 		return vi, err
@@ -219,6 +208,9 @@ func (vi VaultInstance) GetACL() (VaultInstance, error) {
 	// let's use background context
 	ctx := context.Background()
 
+	// make sure it's cleared out
+	vi.Acl = ACL{}
+
 	//sys/internal/ui/resultant-acl
 	resultant_acl, err := vi.Client.Logical().ReadWithContext(ctx, "sys/internal/ui/resultant-acl/")
 	if err != nil {
@@ -252,5 +244,29 @@ func (vi VaultInstance) GetACL() (VaultInstance, error) {
 			log.Printf("\nACL:\n\n%v\n", vi.Acl)
 		}
 	}
+	return vi, nil
+}
+
+func BuildAndConnect(vconfig *config.VaultConfig) (VaultInstance, error) {
+	vi, err := ConnectVaultInstance(vconfig)
+	if err != nil {
+		log.Printf("unable to initialize Vault client: %v", err)
+		return vi, err
+	} else {
+
+		update, err := vi.Login(vconfig)
+		if err != nil {
+			log.Printf("unable to login: %v", err)
+			return vi, err
+		}
+		vi = update
+		update, err = vi.GetACL()
+		if err != nil {
+			log.Printf("unable to get ACL: %v", err)
+			return vi, err
+		}
+		vi = update
+	}
+
 	return vi, nil
 }
