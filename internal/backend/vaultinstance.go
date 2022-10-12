@@ -3,58 +3,48 @@ package backend
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"strings"
 
+	"github.com/fennysoftware/vaultviewer/internal/config"
 	"github.com/hashicorp/vault/api"
 	vault "github.com/hashicorp/vault/api"
 )
 
-type LDAPAuth struct {
-	MountPath    string `yaml:"mountPath"`
-	Username     string `yaml:"username"`
-	Password     string `yaml:"password"`
-	PasswordFile string `yaml:"passwordFile"`
-	PasswordEnv  string `yaml:"passwordEnv"`
-}
-
-type VaultAuth struct {
-	LDAP     *LDAPAuth `yaml:"ldap"`
-	Username string    `yaml:"user"`
-	Password string    `yaml:"password"`
-	Token    string    `yaml:"token"`
-	JWT      string    `yaml:"jwt"`
-}
-
 type VaultInstance struct {
-	Address   string        `yaml:"url"`
-	Namespace string        `yaml:"namespace"`
-	Auth      *VaultAuth    `yaml:"auth"`
-	Client    *vault.Client `yaml:"-"`
-	Acl       ACL           `yaml:"-"`
+	DisplayName string        `yaml:"-"`
+	Client      *vault.Client `yaml:"-"`
+	Acl         ACL           `yaml:"-"`
 }
 
-func ConnectVaultInstance(Address string, Namespace string) (VaultInstance, error) {
+func ConnectVaultInstance(vconfig *config.VaultConfig) (VaultInstance, error) {
 	config := vault.DefaultConfig()
-	config.Address = Address
+	config.Address = vconfig.Address
 	client, err := vault.NewClient(config)
-	ns := client.Namespace()
-
-	if len(Namespace) > 0 {
-		client.SetNamespace(Namespace)
-		ns = Namespace
+	//ns := client.Namespace()
+	if len(vconfig.Namespace) > 0 {
+		client.SetNamespace(vconfig.Namespace)
+		//ns = vconfig.Namespace
 	}
 	vi := VaultInstance{}
-	vi.Address = Address
-	if ns == "" {
-		vi.Namespace = "Default"
+
+	if len(vconfig.Name) == 0 {
+		vi.DisplayName = client.Address() + " - " + client.Namespace()
 	} else {
-		vi.Namespace = ns
+		vi.DisplayName = vconfig.Name
 	}
+	//vi.Address = Address
+	//vi.Auth = auth
+	/*
+		if ns == "" {
+			vi.Namespace = "Default"
+		} else {
+			vi.Namespace = ns
+		}
+	*/
 
 	if err != nil {
 		return vi, err
@@ -64,8 +54,8 @@ func ConnectVaultInstance(Address string, Namespace string) (VaultInstance, erro
 	return vi, nil
 }
 
-func (vi VaultInstance) Login() (VaultInstance, error) {
-	if vi.Auth == nil {
+func (vi VaultInstance) Login(vconfig *config.VaultConfig) (VaultInstance, error) {
+	if vconfig.Auth == nil {
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Printf("Enter Username: ")
 		text, err := reader.ReadString('\n')
@@ -90,37 +80,37 @@ func (vi VaultInstance) Login() (VaultInstance, error) {
 	} else {
 		// token first
 		// it's easy
-		if len(vi.Auth.Token) > 0 {
-			vi.Client.SetToken(vi.Auth.Token)
+		if len(vconfig.Auth.Token) > 0 {
+			vi.Client.SetToken(vconfig.Auth.Token)
 			return vi, nil
 		} else {
-			if len(vi.Auth.JWT) > 0 {
-				login, err := vi.loginJWT(vi.Auth.JWT)
+			if len(vconfig.Auth.JWT) > 0 {
+				login, err := vi.loginJWT(vconfig.Auth.JWT)
 				if err != nil {
 					return vi, err
 				}
 				vi.Client.SetToken(login.Auth.ClientToken)
 			}
 
-			if vi.Auth.LDAP != nil {
-				login, err := vi.loginLDAP(vi.Auth.LDAP)
+			if vconfig.Auth.LDAP != nil {
+				login, err := vi.loginLDAP(vconfig.Auth.LDAP)
 				if err != nil {
 					return vi, err
 				}
 				vi.Client.SetToken(login.Auth.ClientToken)
 			}
-			if len(vi.Auth.Username) > 0 {
-				pwd := vi.Auth.Password
+			if len(vconfig.Auth.Username) > 0 {
+				pwd := vconfig.Auth.Password
 				if len(pwd) == 0 {
 					reader := bufio.NewReader(os.Stdin)
-					fmt.Printf("Enter Password for %s: ", vi.Auth.Username)
+					fmt.Printf("Enter Password for %s: ", vconfig.Auth.Username)
 					text, err := reader.ReadString('\n')
 					if err != nil {
 						return vi, err
 					}
 					pwd = strings.Replace(text, "\n", "", -1)
 				}
-				login, err := vi.loginUsernamePassword(vi.Auth.Username, pwd)
+				login, err := vi.loginUsernamePassword(vconfig.Auth.Username, pwd)
 				if err != nil {
 					return vi, err
 				}
@@ -129,10 +119,9 @@ func (vi VaultInstance) Login() (VaultInstance, error) {
 			return vi, nil
 		}
 	}
-	return vi, errors.New("failed to login")
 }
 
-func (vi VaultInstance) loginLDAP(a *LDAPAuth) (*api.Secret, error) {
+func (vi VaultInstance) loginLDAP(a *config.LDAPAuth) (*api.Secret, error) {
 
 	loginData := make(map[string]interface{})
 
