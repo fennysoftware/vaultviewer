@@ -4,12 +4,33 @@ import (
 	"io/ioutil"
 
 	"gopkg.in/yaml.v3"
-
-	"github.com/fennysoftware/vaultviewer/internal/backend"
 )
 
+type LDAPAuth struct {
+	MountPath    string `yaml:"mountPath"`
+	Username     string `yaml:"username"`
+	Password     string `yaml:"password"`
+	PasswordFile string `yaml:"passwordFile"`
+	PasswordEnv  string `yaml:"passwordEnv"`
+}
+
+type VaultAuth struct {
+	LDAP     *LDAPAuth `yaml:"ldap"`
+	Username string    `yaml:"user"`
+	Password string    `yaml:"password"`
+	Token    string    `yaml:"token"`
+	JWT      string    `yaml:"jwt"`
+}
+
+type VaultConfig struct {
+	Name      string     `yaml:"name"`
+	Address   string     `yaml:"url"`
+	Namespace string     `yaml:"namespace"`
+	Auth      *VaultAuth `yaml:"auth"`
+}
+
 type VaultInstanceConfig struct {
-	Instances []*backend.VaultInstance `yaml:"instances"`
+	Instances []*VaultConfig `yaml:"instances"`
 }
 
 func LoadConfig(path string) (VaultInstanceConfig, error) {
