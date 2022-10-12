@@ -19,54 +19,27 @@ type TNodeRef struct {
 }
 
 func GetTree(vic config.VaultInstanceConfig) *tview.TreeView {
-	root := tview.NewTreeNode("Vault Instances").SetColor(tcell.ColorGreen)
-	populateRootNode(vic, root)
-	tree := tview.NewTreeView().SetRoot(root).SetCurrentNode(root)
+	//	textView := tview.NewTextView()
+	//textView.SetBorder(true).SetTitle("Info")
 
-	tree.SetSelectedFunc(func(node *tview.TreeNode) {
-		reference := node.GetReference()
-		if reference == nil {
-			return
-		}
-		children := node.GetChildren()
-		if len(children) == 0 {
-			ref := reference.(*TNodeRef)
-			if ref != nil {
-				ref.Expand(node)
-			}
-		} else {
-			// Collapse if visible, expand if collapsed.
-			node.SetExpanded(!node.IsExpanded())
-		}
-	})
+	root := tview.NewTreeNode("/").SetColor(tcell.ColorGreen)
+	populateRootNode(vic, root)
+	root.ExpandAll()
+	tree := tview.NewTreeView().SetRoot(root).SetCurrentNode(root)
 
 	return tree
 }
 
 func populateRootNode(vic config.VaultInstanceConfig, root *tview.TreeNode) {
-	for _, ins := range vic.Instances {
-		vi, err := backend.ConnectVaultInstance(ins)
+	for _, vconfig := range vic.Instances {
+		vi, err := backend.BuildAndConnect(vconfig)
 		if err != nil {
 			log.Printf("unable to initialize Vault client: %v", err)
 			continue
-		} else {
-
-			update, err := vi.Login(ins)
-			if err != nil {
-				log.Printf("unable to login: %v", err)
-				continue
-			}
-			vi = update
-			update, err = vi.GetACL()
-			if err != nil {
-				log.Printf("unable to get ACL: %v", err)
-				continue
-			}
-			vi = update
-			tnt := BuildNodeRef(&vi, vi.DisplayName, 0, backend.PathPermissions{})
-			vi_node := tview.NewTreeNode(vi.DisplayName).SetColor(tcell.ColorGreen).SetReference(tnt)
-			root.AddChild(vi_node)
 		}
+		tnt := BuildNodeRef(&vi, vi.DisplayName, 0, backend.PathPermissions{})
+		vi_node := tview.NewTreeNode(vi.DisplayName).SetColor(tcell.ColorGreen).SetReference(tnt)
+		root.AddChild(vi_node)
 	}
 }
 
@@ -75,6 +48,7 @@ func populateRootNode(vic config.VaultInstanceConfig, root *tview.TreeNode) {
 // 2 = glob
 // 3 = has capabilities
 // 4 = connection
+// 5 = command node
 func BuildNodeRef(vi *backend.VaultInstance, name string, ntype int, pp backend.PathPermissions) *TNodeRef {
 	tnt := TNodeRef{}
 	tnt.Type = ntype
@@ -88,6 +62,16 @@ func addNodes(target *tview.TreeNode, children []*tview.TreeNode) {
 	for _, child := range children {
 		target.AddChild(child)
 	}
+}
+
+func addAppendDisplayNode(Displayname string, children []*tview.TreeNode, selectable bool, col tcell.Color) []*tview.TreeNode {
+
+	child := tview.NewTreeNode(Displayname).SetSelectable(selectable)
+	child.SetColor(col)
+
+	// add node to array
+	children = append(children, child)
+	return children
 }
 
 func addAppendNewNodeRef(ref *TNodeRef, children []*tview.TreeNode, selectable bool, col tcell.Color) []*tview.TreeNode {
