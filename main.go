@@ -14,8 +14,14 @@ func main() {
 		panic(err)
 	}
 
-	tree := ui.GetTree(vic)
-	if err := tview.NewApplication().SetRoot(tree, true).EnableMouse(true).Run(); err != nil {
+	grid := tview.NewGrid().
+		SetRows(0).
+		SetColumns(40, 0).
+		SetBorders(true)
+	ui.Get(vic, grid)
+
+	app := tview.NewApplication()
+	if err := app.SetRoot(grid, true).EnableMouse(true).Run(); err != nil {
 		panic(err)
 	}
 }
