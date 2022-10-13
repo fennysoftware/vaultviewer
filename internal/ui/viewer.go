@@ -1,18 +1,15 @@
 package ui
 
 import (
-	"fmt"
-
-	config "github.com/fennysoftware/vaultviewer/internal/config"
-
+	"github.com/fennysoftware/vaultviewer/internal/config"
+	"github.com/fennysoftware/vaultviewer/internal/executer"
 	"github.com/gdamore/tcell/v2"
-
 	"github.com/rivo/tview"
 )
 
 type Viewer struct {
 	tree    *tview.TreeView
-	infobox *tview.TextView
+	infobox *tview.TextArea
 }
 
 func Get(vic config.VaultInstanceConfig, grid *tview.Grid) *Viewer {
@@ -40,9 +37,9 @@ func Get(vic config.VaultInstanceConfig, grid *tview.Grid) *Viewer {
 		handleEventWithKey(&vwr, event)
 		return event
 	})
-	vwr.infobox = tview.NewTextView()
-	vwr.infobox.SetBorder(true).SetTitle("Info")
 
+	vwr.infobox = tview.NewTextArea() //tview.NewTextView()
+	vwr.infobox.SetBorder(true).SetTitle("Info")
 	grid.AddItem(vwr.infobox, 0, 1, 1, 1, 0, 0, false)
 	// Layout for screens wider than 100 cells.
 	grid.AddItem(vwr.tree, 0, 0, 1, 1, 0, 100, true)
@@ -64,15 +61,24 @@ func handleEventWithKey(vwr *Viewer, event *tcell.EventKey) {
 		} else {
 			vwr.ShowInfo(nil)
 		}
+
+	case 'r':
+		node := vwr.tree.GetCurrentNode()
+		reference := node.GetReference()
+		if reference != nil {
+			ref := reference.(*TNodeRef)
+			if ref != nil {
+				// we want to run a new terminal/cmd.exe/bash etc
+				executer.Runner(ref.Instance)
+			}
+		}
 	}
 }
 
 func (vwr *Viewer) ShowInfo(ref *TNodeRef) {
-
 	if ref == nil {
-		vwr.infobox.SetText("Nothing Selected")
+		vwr.infobox.SetText("Nothing Selected", false)
 	} else {
-		vwr.infobox.SetText(fmt.Sprintf("%v", ref))
+		vwr.infobox.SetText(ref.GetInfo(), false)
 	}
-
 }
