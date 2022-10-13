@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
 
 	backend "github.com/fennysoftware/vaultviewer/internal/backend"
@@ -18,15 +20,48 @@ type TNodeRef struct {
 	Instance    *backend.VaultInstance
 }
 
-func GetTree(vic config.VaultInstanceConfig) *tview.TreeView {
-	//	textView := tview.NewTextView()
-	//textView.SetBorder(true).SetTitle("Info")
+func (tn *TNodeRef) GetInfo() string {
 
+	if tn.Type == 4 {
+		config := struct {
+			Displayname string `json:"Displayname"`
+			Token       string `json:"Token"`
+			Namespace   string `json:"Namespace"`
+			Address     string `json:"Address"`
+			IsRoot      bool   `json:"IsRoot"`
+		}{
+			Displayname: tn.Displayname,
+			Token:       tn.Instance.Client.Token(),
+			Namespace:   tn.Instance.Client.Namespace(),
+			Address:     tn.Instance.Client.Address(),
+			IsRoot:      tn.Instance.Acl.Root,
+		}
+
+		data, err := json.MarshalIndent(&config, "", "\t")
+		if err != nil {
+			log.Fatal(err)
+		}
+		return string(data)
+	} else {
+		return fmt.Sprintf(`
+		Displayname			: %s
+		Node Type			: %d
+		Instance 			: %s
+		Path Permissions	: %s
+		`,
+			tn.Displayname,
+			tn.Type,
+			tn.Instance.Client.Address(),
+			tn.PP.Path,
+		)
+	}
+}
+
+func GetTree(vic config.VaultInstanceConfig) *tview.TreeView {
 	root := tview.NewTreeNode("/").SetColor(tcell.ColorGreen)
 	populateRootNode(vic, root)
 	root.ExpandAll()
 	tree := tview.NewTreeView().SetRoot(root).SetCurrentNode(root)
-
 	return tree
 }
 
@@ -48,7 +83,6 @@ func populateRootNode(vic config.VaultInstanceConfig, root *tview.TreeNode) {
 // 2 = glob
 // 3 = has capabilities
 // 4 = connection
-// 5 = command node
 func BuildNodeRef(vi *backend.VaultInstance, name string, ntype int, pp backend.PathPermissions) *TNodeRef {
 	tnt := TNodeRef{}
 	tnt.Type = ntype
@@ -64,30 +98,32 @@ func addNodes(target *tview.TreeNode, children []*tview.TreeNode) {
 	}
 }
 
-func addAppendDisplayNode(Displayname string, children []*tview.TreeNode, selectable bool, col tcell.Color) []*tview.TreeNode {
-
-	child := tview.NewTreeNode(Displayname).SetSelectable(selectable)
+func addAppendNewNodeRef(ref *TNodeRef, children []*tview.TreeNode, selectable bool, col tcell.Color) []*tview.TreeNode {
+	child := tview.NewTreeNode(ref.Displayname).SetReference(ref).SetSelectable(selectable)
 	child.SetColor(col)
-
 	// add node to array
 	children = append(children, child)
 	return children
 }
 
-func addAppendNewNodeRef(ref *TNodeRef, children []*tview.TreeNode, selectable bool, col tcell.Color) []*tview.TreeNode {
+func addConnectionNodes(tnt *TNodeRef) []*tview.TreeNode {
+	children := []*tview.TreeNode{}
+	children = addAppendNewNodeRef(BuildNodeRef(tnt.Instance, "Connection", 4, backend.PathPermissions{}), children, true, tcell.ColorWhite)
+	return children
+}
 
-	child := tview.NewTreeNode(ref.Displayname).SetReference(ref).SetSelectable(selectable)
-	child.SetColor(col)
-
-	// add node to array
-	children = append(children, child)
+func addACLRoot(tnt *TNodeRef, children []*tview.TreeNode) []*tview.TreeNode {
+	aclnode := tview.NewTreeNode("ACL").SetReference(tnt).SetSelectable(true)
+	// add nodes to array
+	perms := addACLNodes(tnt)
+	addNodes(aclnode, perms)
+	children = append(children, aclnode)
 	return children
 }
 
 func addACLNodes(tnt *TNodeRef) []*tview.TreeNode {
-	children := []*tview.TreeNode{}
 	// add nodes to array
-	children = addAppendNewNodeRef(BuildNodeRef(tnt.Instance, "Connection", 4, backend.PathPermissions{}), children, true, tcell.ColorWhite)
+	children := []*tview.TreeNode{}
 	if len(tnt.Instance.Acl.ExactRules) == 0 {
 		children = addAppendNewNodeRef(BuildNodeRef(tnt.Instance, "ExactRules", 1, backend.PathPermissions{}), children, true, tcell.ColorRed)
 	} else {
@@ -112,20 +148,20 @@ func addPermissionNodes(tnt *TNodeRef, pp []backend.PathPermissions, children []
 	return children
 }
 
-func (tnt *TNodeRef) AddNodes(target *tview.TreeNode) {
-
+func (tnt *TNodeRef) Expand(target *tview.TreeNode) {
 	children := []*tview.TreeNode{}
 
 	switch tnt.Type {
 	case 0:
-		children = addACLNodes(tnt)
+		children = addConnectionNodes(tnt)
+		children = addACLRoot(tnt, children)
 	case 1:
 		children = addPermissionNodes(tnt, tnt.Instance.Acl.ExactRules, children)
 	case 2:
 		children = addPermissionNodes(tnt, tnt.Instance.Acl.PrefixRules, children)
 	case 3:
 		cnode := tview.NewTreeNode("Capabilities").SetReference(tnt).SetSelectable(true)
-		if tnt.PP.Permissions.CapabilitiesBitmap == backend.DenyCapabilityInt {
+		if tnt.PP.Permissions.CapabilitiesBitmap == backend.DenyCapabilityInt || len(tnt.PP.Permissions.Capabilities) == 0 {
 			cnode.SetColor(tcell.ColorRed)
 		} else {
 			cnode.SetColor(tcell.ColorYellow)
@@ -135,25 +171,6 @@ func (tnt *TNodeRef) AddNodes(target *tview.TreeNode) {
 			cnode.AddChild(node)
 		}
 		target.AddChild(cnode)
-	case 4:
-		address := tview.NewTreeNode(tnt.Instance.Client.Address()).SetSelectable(true)
-		target.AddChild(address)
-		namespace := tview.NewTreeNode(tnt.Instance.Client.Namespace()).SetSelectable(true)
-		target.AddChild(namespace)
-		if tnt.Instance.Acl.Root {
-			isroot := tview.NewTreeNode("IsRoot").SetSelectable(true)
-			target.AddChild(isroot)
-		} else {
-			isroot := tview.NewTreeNode("NotRoot").SetSelectable(true)
-			target.AddChild(isroot)
-		}
-		token := tview.NewTreeNode(tnt.Instance.Client.Token()).SetSelectable(false)
-		target.AddChild(token)
 	}
-
 	addNodes(target, children)
-}
-
-func (tnt *TNodeRef) Expand(target *tview.TreeNode) {
-	tnt.AddNodes(target)
 }
